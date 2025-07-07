@@ -18,6 +18,7 @@ func main() {
 	app.Get("/website-validate", routes.WebsiteValidateHandler)
 	app.Post("/quick-scrape", routes.QuickScrapeHandler)
 	app.Post("/product-scrape", routes.ProductScrapeHandler)
+	app.Post("/event-scrape", routes.EventScrapeHandler)
 
 	log.Println("🚀 Scraper service running on :8000")
 	log.Fatal(app.Listen(":8000"))
