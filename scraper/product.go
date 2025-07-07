@@ -10,7 +10,7 @@ import (
 var productKeywords = []string{
 	"product", "products", "service", "services",
 	"solution", "solutions", "offering", "offerings",
-	"platform", "feature", "features",
+	"platform", "feature", "features", "app", "apps",
 }
 
 func ProductScrape(startURL string) ScrapeResult {
