@@ -28,22 +28,30 @@ func ProductScrape(startURL string) ScrapeResult {
 
 	var mu sync.Mutex
 	var pages []PageData
-	visited := make(map[string]bool)
+	var visited sync.Map // 🟢 concurrency-safe map
 
 	c.OnHTML("body", func(e *colly.HTMLElement) {
 		text := cleanAndTrim(stripHTML(e.DOM.Text()), 400, 4000)
 		mu.Lock()
-		pages = append(pages, PageData{URL: e.Request.URL.String(), Text: text})
+		pages = append(pages, PageData{
+			URL:  e.Request.URL.String(),
+			Text: text,
+		})
 		mu.Unlock()
 	})
 
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Request.AbsoluteURL(e.Attr("href"))
-		if link == "" || visited[link] {
+		if link == "" {
 			return
 		}
+
+		// atomically check and store in sync.Map
+		if _, loaded := visited.LoadOrStore(link, true); loaded {
+			return
+		}
+
 		if containsAny(link, productKeywords) {
-			visited[link] = true
 			c.Visit(link)
 		}
 	})
@@ -54,5 +62,6 @@ func ProductScrape(startURL string) ScrapeResult {
 
 	c.Visit(startURL)
 	c.Wait()
+
 	return ScrapeResult{Pages: pages}
 }
