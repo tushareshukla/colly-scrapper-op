@@ -2,14 +2,15 @@ package main
 
 import (
 	"colly-scrapper-op/routes"
-	"github.com/gofiber/fiber/v2"
 	"log"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 func main() {
 	app := fiber.New(fiber.Config{
-		Prefork:      true,
+		Prefork:      false,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  10 * time.Second,
@@ -20,6 +21,6 @@ func main() {
 	app.Post("/product-scrape", routes.ProductScrapeHandler)
 	app.Post("/event-scrape", routes.EventScrapeHandler)
 
-	log.Println("🚀 Scraper service running on :8000")
-	log.Fatal(app.Listen(":8000"))
+	log.Println("🚀 Scraper service running on :3000")
+	log.Fatal(app.Listen(":3000"))
 }
