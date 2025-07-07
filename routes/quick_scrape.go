@@ -5,18 +5,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-type ScrapeRequest struct {
-	URL string `json:"url"`
-}
-
 func QuickScrapeHandler(c *fiber.Ctx) error {
 	var req ScrapeRequest
 	if err := c.BodyParser(&req); err != nil || req.URL == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Provide valid JSON body with 'url'",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Provide valid JSON body with 'url'"})
 	}
-
 	result := scraper.QuickScrape(req.URL)
 	return c.JSON(result)
 }
