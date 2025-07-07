@@ -7,7 +7,7 @@ import (
 	"github.com/gocolly/colly/v2"
 )
 
-var quickKeywords = []string{"about", "about-us", "info", "company", "contact"}
+var quickKeywords = []string{"about", "about-us", "info", "contact"}
 
 func QuickScrape(startURL string) ScrapeResult {
 	c := colly.NewCollector(
