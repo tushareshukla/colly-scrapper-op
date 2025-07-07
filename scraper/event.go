@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -9,92 +10,81 @@ import (
 	"github.com/gocolly/colly/v2"
 )
 
+type ScrapedPage struct {
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	External bool   `json:"external"`
+}
+
 var eventKeywords = []string{
-	"event", "webinar", "conference", "summit", "expo", "forum", "seminar",
+	"event", "events", "webinar", "conference", "summit", "expo", "forum", "seminar",
 }
 
-type EventPage struct {
-	URL      string   `json:"url"`
-	Title    string   `json:"title"`
-	Date     string   `json:"date"`
-	Speakers []string `json:"speakers"`
-	Host     string   `json:"host"`
+var platformDomainPatterns = []string{
+	`hopin\.com`, `zoom\.us`, `webex\.com`, `airmeet\.com`, `vfairs\.com`, `eventbrite\.com`,
+	`cvent\.com`, `bizzabo\.com`, `on24\.com`, `remo\.co`, `whova\.com`, `brella\.io`,
+	`runtheworld\.today`, `splashthat\.com`, `accelevents\.com`, `bigmarker\.com`, `6connex\.com`,
+	`gotowebinar\.com`, `gotomeeting\.com`, `slido\.com`, `inevent\.com`, `pheedloop\.com`,
+	`swapcard\.com`, `eventzilla\.net`, `eventscase\.com`, `hubilo\.com`, `convene\.com`,
+	`attendify\.com`, `socio\.events`, `eventcadence\.com`, `heysummit\.com`, `meetyoo\.com`,
+	`gathertown\.com`, `shindig\.com`, `hexafair\.com`, `veertly\.com`, `eventsair\.com`,
+	`sched\.com`, `glisser\.com`, `meetingplay\.com`, `vconferenceonline\.com`, `expopass\.com`,
+	`bevy\.com`, `hubspot\.com`, `demio\.com`, `conferize\.com`, `tampevents\.com`, `tame\.events`,
+	`spotme\.com`, `evvnt\.com`, `tickettailor\.com`, `ticketspice\.com`, `brighttalk\.com`,
 }
 
-type EventResult struct {
-	Pages []EventPage `json:"pages"`
-}
-
-func EventScrape(startURL string) EventResult {
-	c := colly.NewCollector(
-		colly.Async(true),
-		colly.AllowedDomains(getDomain(startURL)),
-	)
-
-	c.SetRequestTimeout(3 * 1e9)
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 20,
-		RandomDelay: 100 * 1e6,
-	})
+func EventCrawler(startURL string) []ScrapedPage {
+	startDomain := getDomain(startURL)
+	c := colly.NewCollector(colly.Async(true))
+	c.SetRequestTimeout(2 * 1e9)
+	c.Limit(&colly.LimitRule{DomainGlob: "*", Parallelism: 50, RandomDelay: 50 * 1e6})
 
 	var mu sync.Mutex
-	var pages []EventPage
-	visited := make(map[string]bool)
+	var result []ScrapedPage
+	var visited sync.Map
+	externalLinks := make(chan string, 100)
+
+	matchEventKeyword := regexp.MustCompile(strings.Join(eventKeywords, `|`))
+	platformRegexes := make([]*regexp.Regexp, 0, len(platformDomainPatterns))
+	for _, p := range platformDomainPatterns {
+		platformRegexes = append(platformRegexes, regexp.MustCompile(p))
+	}
 
 	c.OnHTML("body", func(e *colly.HTMLElement) {
-		title := e.DOM.Find("h1").First().Text()
-		if title == "" {
-			title = e.DOM.Find("title").Text()
-		}
-
-		date := ""
-		e.DOM.Find("time").EachWithBreak(func(_ int, s *goquery.Selection) bool {
-			if t, exists := s.Attr("datetime"); exists {
-				date = t
-				return false
-			}
-			date = s.Text()
-			return false
-		})
-		if date == "" {
-			e.DOM.Find(`meta[property="article:published_time"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
-				if t, exists := s.Attr("content"); exists {
-					date = t
-					return false
-				}
-				return true
-			})
-		}
-
-		var speakers []string
-		e.DOM.Find(".speaker, .speakers, .presenter, .author").Each(func(_ int, s *goquery.Selection) {
-			txt := strings.TrimSpace(s.Text())
-			if txt != "" {
-				speakers = append(speakers, txt)
-			}
-		})
-
-		host := getDomain(startURL)
-
+		text := cleanAndTrim(stripHTML(e.DOM.Text()), 50, 10000)
 		mu.Lock()
-		pages = append(pages, EventPage{
+		result = append(result, ScrapedPage{
 			URL:      e.Request.URL.String(),
-			Title:    cleanAndTrim(title, 10, 200),
-			Date:     date,
-			Speakers: speakers,
-			Host:     host,
+			Text:     text,
+			External: false,
 		})
 		mu.Unlock()
+
+		e.DOM.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+			href, _ := s.Attr("href")
+			if href == "" {
+				return
+			}
+			host := getDomain(href)
+			for _, re := range platformRegexes {
+				if re.MatchString(host) {
+					if _, loaded := visited.LoadOrStore(href, true); !loaded {
+						externalLinks <- href
+					}
+				}
+			}
+		})
 	})
 
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Request.AbsoluteURL(e.Attr("href"))
-		if link == "" || visited[link] {
+		if link == "" {
 			return
 		}
-		if containsAny(link, eventKeywords) {
-			visited[link] = true
+		if _, loaded := visited.LoadOrStore(link, true); loaded {
+			return
+		}
+		if getDomain(link) == startDomain && matchEventKeyword.MatchString(link) {
 			c.Visit(link)
 		}
 	})
@@ -103,8 +93,35 @@ func EventScrape(startURL string) EventResult {
 		log.Printf("Visiting: %s", r.URL.String())
 	})
 
-	c.Visit(startURL)
-	c.Wait()
+	go func() {
+		c.Visit(startURL)
+		c.Wait()
+		close(externalLinks)
+	}()
 
-	return EventResult{Pages: pages}
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ec := colly.NewCollector()
+			ec.SetRequestTimeout(2 * 1e9)
+			ec.OnHTML("body", func(e *colly.HTMLElement) {
+				text := cleanAndTrim(stripHTML(e.DOM.Text()), 50, 10000)
+				mu.Lock()
+				result = append(result, ScrapedPage{
+					URL:      e.Request.URL.String(),
+					Text:     text,
+					External: true,
+				})
+				mu.Unlock()
+			})
+			for link := range externalLinks {
+				ec.Visit(link)
+			}
+		}()
+	}
+
+	wg.Wait()
+	return result
 }
