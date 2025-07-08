@@ -3,6 +3,7 @@ package scraper
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gocolly/colly/v2"
 )
@@ -19,16 +20,33 @@ func ProductScrape(startURL string) ScrapeResult {
 		colly.AllowedDomains(getDomain(startURL)),
 	)
 
-	c.SetRequestTimeout(3 * 1e9)
+	c.SetRequestTimeout(3 * time.Second)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 20,
-		RandomDelay: 100 * 1e6,
+		RandomDelay: 100 * time.Millisecond,
 	})
 
 	var mu sync.Mutex
 	var pages []PageData
 	var visited sync.Map // 🟢 concurrency-safe map
+
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36")
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9")
+		r.Headers.Set("Connection", "keep-alive")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+		r.Headers.Set("Cache-Control", "no-cache")
+		r.Headers.Set("Pragma", "no-cache")
+		r.Headers.Set("Referer", startURL)
+		log.Printf("[Colly] Visiting: %s", r.URL.String())
+	})
+
+	c.OnResponse(func(r *colly.Response) {
+		log.Printf("[Colly] Response status: %d | Length: %d bytes", r.StatusCode, len(r.Body))
+		log.Println("Sample content:\n", string(r.Body[:min(500, len(r.Body))]))
+	})
 
 	c.OnHTML("body", func(e *colly.HTMLElement) {
 		text := cleanAndTrim(stripHTML(e.DOM.Text()), 400, 4000)
@@ -52,15 +70,14 @@ func ProductScrape(startURL string) ScrapeResult {
 		}
 
 		if containsAny(link, productKeywords) {
-			c.Visit(link)
+			_ = c.Visit(link)
 		}
 	})
-
 	c.OnRequest(func(r *colly.Request) {
 		log.Printf("Visiting: %s", r.URL.String())
 	})
 
-	c.Visit(startURL)
+	_ = c.Visit(startURL)
 	c.Wait()
 
 	return ScrapeResult{Pages: pages}

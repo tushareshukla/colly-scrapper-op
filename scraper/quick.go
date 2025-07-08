@@ -28,6 +28,23 @@ func QuickScrape(startURL string) ScrapeResult {
 		RandomDelay: 100 * time.Millisecond,
 	})
 
+	c.OnRequest(func(r *colly.Request) {
+		r.Headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36")
+		r.Headers.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+		r.Headers.Set("Accept-Language", "en-US,en;q=0.9")
+		r.Headers.Set("Connection", "keep-alive")
+		r.Headers.Set("Upgrade-Insecure-Requests", "1")
+		r.Headers.Set("Cache-Control", "no-cache")
+		r.Headers.Set("Pragma", "no-cache")
+		r.Headers.Set("Referer", startURL)
+		log.Printf("[Colly] Visiting: %s", r.URL.String())
+	})
+
+	c.OnResponse(func(r *colly.Response) {
+		log.Printf("[Colly] Response status: %d | Length: %d bytes", r.StatusCode, len(r.Body))
+		log.Println("Sample content:\n", string(r.Body[:min(500, len(r.Body))]))
+	})
+
 	c.OnHTML("body", func(e *colly.HTMLElement) {
 		text := cleanAndTrim(stripHTML(e.DOM.Text()), 400, 1000)
 		if text != "" {
@@ -51,10 +68,6 @@ func QuickScrape(startURL string) ScrapeResult {
 		}
 	})
 
-	c.OnRequest(func(r *colly.Request) {
-		log.Printf("[Colly] Visiting: %s", r.URL.String())
-	})
-
 	_ = c.Visit(startURL)
 	c.Wait()
 
@@ -63,7 +76,6 @@ func QuickScrape(startURL string) ScrapeResult {
 		return ScrapeResult{Pages: pages}
 	}
 
-	// --- Fallback to Playwright Firefox ---
 	log.Println("⚠️ Colly returned no content. Falling back to Playwright (Firefox).")
 
 	pw, err := playwright.Run()
@@ -102,10 +114,19 @@ func QuickScrape(startURL string) ScrapeResult {
 
 	_, err = page.Goto(startURL, playwright.PageGotoOptions{
 		WaitUntil: playwright.WaitUntilStateNetworkidle,
-		Timeout:   playwright.Float(20000),
+		Timeout:   playwright.Float(40000),
 	})
 	if err != nil {
 		log.Printf("❌ Firefox navigation error: %v", err)
+		return ScrapeResult{Pages: nil}
+	}
+
+	_, err = page.WaitForSelector("body", playwright.PageWaitForSelectorOptions{
+		State:   playwright.WaitForSelectorStateAttached,
+		Timeout: playwright.Float(40000),
+	})
+	if err != nil {
+		log.Printf("❌ Body did not load: %v", err)
 		return ScrapeResult{Pages: nil}
 	}
 
@@ -127,24 +148,9 @@ func QuickScrape(startURL string) ScrapeResult {
 	return ScrapeResult{Pages: nil}
 }
 
-// Dummy helper stubs to be replaced with real implementations
-// func getDomain(url string) string { return strings.Split(strings.Split(url, "//")[1], "/")[0] }
-// func containsAny(url string, keys []string) bool {
-// 	for _, k := range keys {
-// 		if strings.Contains(strings.ToLower(url), k) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-// func stripHTML(input string) string { return input } // placeholder
-// func cleanAndTrim(s string, min, max int) string {
-// 	s = strings.TrimSpace(s)
-// 	if len(s) > max {
-// 		return s[:max]
-// 	}
-// 	if len(s) < min {
-// 		return ""
-// 	}
-// 	return s
-// }
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
