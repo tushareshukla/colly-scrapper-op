@@ -42,11 +42,11 @@ func QuickScrape(startURL string) ScrapeResult {
 
 	c.OnResponse(func(r *colly.Response) {
 		log.Printf("[Colly] Response status: %d | Length: %d bytes", r.StatusCode, len(r.Body))
-		log.Println("Sample content:\n", string(r.Body[:min(500, len(r.Body))]))
 	})
 
 	c.OnHTML("body", func(e *colly.HTMLElement) {
-		text := cleanAndTrim(stripHTML(e.DOM.Text()), 400, 1000)
+		e.DOM.Find("script, style, .gpu-banner, .hero-animation").Remove()
+		text := cleanAndTrim(e.DOM.Text(), 400, 1000)
 		if text != "" {
 			mu.Lock()
 			pages = append(pages, PageData{
@@ -121,22 +121,17 @@ func QuickScrape(startURL string) ScrapeResult {
 		return ScrapeResult{Pages: nil}
 	}
 
-	_, err = page.WaitForSelector("body", playwright.PageWaitForSelectorOptions{
-		State:   playwright.WaitForSelectorStateAttached,
-		Timeout: playwright.Float(40000),
-	})
-	if err != nil {
-		log.Printf("❌ Body did not load: %v", err)
-		return ScrapeResult{Pages: nil}
+	selectors := []string{"main", "article", "section", "body"}
+	var text string
+	for _, sel := range selectors {
+		txt, err := page.InnerText(sel)
+		if err == nil && len(txt) > 300 {
+			text = txt
+			break
+		}
 	}
 
-	bodyText, err := page.InnerText("body")
-	if err != nil {
-		log.Printf("❌ Failed to extract body from Firefox: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-
-	text := cleanAndTrim(bodyText, 400, 1000)
+	text = cleanAndTrim(text, 1000, 3000)
 	if text != "" {
 		log.Println("✅ Playwright (Firefox) succeeded")
 		return ScrapeResult{

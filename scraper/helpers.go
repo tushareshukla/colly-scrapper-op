@@ -29,12 +29,30 @@ func stripHTML(input string) string {
 	return strings.Join(strings.Fields(reTags.ReplaceAllString(input, "")), " ")
 }
 
-func cleanAndTrim(text string, min, max int) string {
-	text = strings.TrimSpace(text)
-	if len(text) > max {
-		return text[:max]
+func cleanAndTrim(raw string, minLen, maxLen int) string {
+	// Remove JS and CSS
+	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+	reJSLike := regexp.MustCompile(`(?i)(var|let|function)\s+\w+\s*=?\s*[\{\(]`)
+	reCSSLike := regexp.MustCompile(`(?i)\.\w+\s*\{`)
+
+	cleaned := reScript.ReplaceAllString(raw, "")
+	cleaned = reStyle.ReplaceAllString(cleaned, "")
+	cleaned = reJSLike.ReplaceAllString(cleaned, "")
+	cleaned = reCSSLike.ReplaceAllString(cleaned, "")
+
+	// Normalize white spaces
+	cleaned = strings.TrimSpace(cleaned)
+	cleaned = regexp.MustCompile(`\s+`).ReplaceAllString(cleaned, " ")
+
+	// Bound length
+	if len(cleaned) < minLen {
+		return ""
 	}
-	return text
+	if len(cleaned) > maxLen {
+		cleaned = cleaned[:maxLen]
+	}
+	return cleaned
 }
 
 func getDomain(link string) string {
