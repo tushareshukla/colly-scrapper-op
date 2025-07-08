@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/playwright-community/playwright-go"
 )
 
 var quickKeywords = []string{"about", "about-us", "info", "contact"}
@@ -76,70 +75,7 @@ func QuickScrape(startURL string) ScrapeResult {
 		return ScrapeResult{Pages: pages}
 	}
 
-	log.Println("⚠️ Colly returned no content. Falling back to Playwright (Firefox).")
-
-	pw, err := playwright.Run()
-	if err != nil {
-		log.Printf("❌ Playwright start failed: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-	defer pw.Stop()
-
-	browser, err := pw.Firefox.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(true),
-	})
-	if err != nil {
-		log.Printf("❌ Firefox launch failed: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-	defer browser.Close()
-
-	context, err := browser.NewContext()
-	if err != nil {
-		log.Printf("❌ Firefox context failed: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-
-	page, err := context.NewPage()
-	if err != nil {
-		log.Printf("❌ Firefox page creation failed: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-
-	_ = page.SetExtraHTTPHeaders(map[string]string{
-		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
-		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-		"Accept-Language": "en-US,en;q=0.9",
-	})
-
-	_, err = page.Goto(startURL, playwright.PageGotoOptions{
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-		Timeout:   playwright.Float(40000),
-	})
-	if err != nil {
-		log.Printf("❌ Firefox navigation error: %v", err)
-		return ScrapeResult{Pages: nil}
-	}
-
-	selectors := []string{"main", "article", "section", "body"}
-	var text string
-	for _, sel := range selectors {
-		txt, err := page.InnerText(sel)
-		if err == nil && len(txt) > 300 {
-			text = txt
-			break
-		}
-	}
-
-	text = cleanAndTrim(text, 1000, 3000)
-	if text != "" {
-		log.Println("✅ Playwright (Firefox) succeeded")
-		return ScrapeResult{
-			Pages: []PageData{{URL: startURL, Text: text}},
-		}
-	}
-
-	log.Println("❌ Firefox fallback succeeded but body is empty")
+	log.Println("❌ Colly returned no content.")
 	return ScrapeResult{Pages: nil}
 }
 
