@@ -45,7 +45,7 @@ func QuickScrape(startURL string) ScrapeResult {
 
 	c.OnHTML("body", func(e *colly.HTMLElement) {
 		e.DOM.Find("script, style, .gpu-banner, .hero-animation").Remove()
-		text := cleanAndTrim(e.DOM.Text(), 400, 1000)
+		text := cleanAndTrim(e.DOM.Text(), 400, 5000)
 		if text != "" {
 			mu.Lock()
 			pages = append(pages, PageData{
